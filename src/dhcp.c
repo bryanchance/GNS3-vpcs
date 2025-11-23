@@ -90,6 +90,7 @@ struct packet * dhcp4_discover(pcs *pc, int renew)
 	memcpy(&dh->options[i], pc->ip4.mac, 6);
 	i += 6;
 	
+	/* For renewing and rebinding, include the requested IP address */
 	if (renew && pc->ip4.dhcp.ip) {
 		dh->options[i++] = DHO_DHCP_REQUESTED_ADDRESS;
 		dh->options[i++] = 4;
@@ -124,13 +125,17 @@ struct packet * dhcp4_discover(pcs *pc, int renew)
 	ip->cksum = 0;
 	ip->cksum = cksum((u_short *)ip, sizeof(iphdr));
 	
-	encap_ehead(m->data, pc->ip4.mac, bcast, ETHERTYPE_IP);
+	/* For renewing, use unicast to the known server MAC; for initial discovery and rebinding, use broadcast */
+	if (renew)
+		encap_ehead(m->data, pc->ip4.mac, pc->ip4.dhcp.smac, ETHERTYPE_IP);
+	else
+		encap_ehead(m->data, pc->ip4.mac, bcast, ETHERTYPE_IP);
 	m->len = sizeof(ethdr) + sizeof(udpiphdr) + sizeof(dhcp4_hdr);
 	
 	return m;
 }
 
-struct packet * dhcp4_request(pcs *pc)
+struct packet * dhcp4_request(pcs *pc, int stage)
 {
 	ethdr *eh;
 	iphdr *ip;
@@ -139,6 +144,7 @@ struct packet * dhcp4_request(pcs *pc)
 	int i, k;
 	struct packet *m;
 	char b[9];
+	u_char bcast[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 		
 	m = new_pkt(DHCP4_PSIZE);
 	if (m == NULL)
@@ -156,7 +162,15 @@ struct packet * dhcp4_request(pcs *pc)
 	dh->xid = pc->ip4.dhcp.xid;
 	dh->secs = 0;
 	dh->flags = 0;
-	dh->ciaddr = pc->ip4.dhcp.ip;
+	/* For different stages, set appropriate client IP address */
+	/* stage == 0: Initial DHCP request (0.0.0.0) */
+	/* stage == 1: Renewing request (client's IP) */
+	/* stage == 2: Rebinding request (client's IP) */
+	if (stage == 0) {
+		dh->ciaddr = 0;              /* 0.0.0.0 for initial request */
+	} else {
+		dh->ciaddr = pc->ip4.dhcp.ip; /* Client's IP for renewing/rebinding */
+	}
 	dh->yiaddr = 0;
 	dh->siaddr = 0;
 	dh->giaddr = 0;
@@ -214,8 +228,18 @@ struct packet * dhcp4_request(pcs *pc)
 	ip->ttl = 16;
 	ip->proto = IPPROTO_UDP;
 	ip->cksum = 0;
-	ip->sip = 0;
-	ip->dip = 0xffffffff;
+	
+	/* For different stages, use appropriate IP addresses */
+	if (stage == 1) {
+		ip->sip = pc->ip4.dhcp.ip;   /* Client's IP */
+		ip->dip = pc->ip4.dhcp.svr;  /* Server's IP */
+	} else if (stage == 2) {
+		ip->sip = pc->ip4.dhcp.ip;   /* Client's IP for rebinding */
+		ip->dip = 0xffffffff;        /* 255.255.255.255 for broadcast */
+	} else {
+		ip->sip = 0;                 /* 0.0.0.0 for initial request */
+		ip->dip = 0xffffffff;        /* 255.255.255.255 for broadcast */
+	}
 
 	bcopy(((struct ipovly *)ip)->ih_x1, b, 9);
 	bzero(((struct ipovly *)ip)->ih_x1, 9);
@@ -226,7 +250,12 @@ struct packet * dhcp4_request(pcs *pc)
 	ip->cksum = 0;
 	ip->cksum = cksum((u_short *)ip, sizeof(iphdr));
 	
-	encap_ehead(m->data, pc->ip4.mac, pc->ip4.dhcp.smac, ETHERTYPE_IP);
+	/* For different stages, use appropriate destination MAC addresses */
+	if (stage == 1) {
+		encap_ehead(m->data, pc->ip4.mac, pc->ip4.dhcp.smac, ETHERTYPE_IP);
+	} else {
+		encap_ehead(m->data, pc->ip4.mac, bcast, ETHERTYPE_IP);
+	}
 	m->len = sizeof(ethdr) + sizeof(udpiphdr) + sizeof(dhcp4_hdr);
 
 	return m;
@@ -666,7 +695,7 @@ int dhcp_renew(pcs *pc)
 	i = 0;
 	ok = 0;
 	while (i++ < 3 && !ok) {
-		m = dhcp4_request(pc);
+		m = dhcp4_request(pc, 1);
 		if (m == NULL) {
 			sleep(1);
 			continue;	
@@ -725,7 +754,7 @@ int dhcp_rebind(pcs *pc)
 	i = 0;
 	ok = 0;
 	while (!ok) {
-		m = dhcp4_request(pc);
+		m = dhcp4_request(pc, 2);
 		if (m == NULL) {
 			sleep(1);
 			continue;	

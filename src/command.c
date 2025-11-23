@@ -693,7 +693,7 @@ static int run_dhcp_new(int renew, int dump)
 	i = 0;
 	ok = 0;
 	while (i < 3 && !ok) {
-		m = dhcp4_request(pc);
+		m = dhcp4_request(pc, renew);
 		if (m == NULL) {
 			printf("out of memory\n");
 			return 0;

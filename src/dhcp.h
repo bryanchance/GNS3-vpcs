@@ -81,7 +81,7 @@ typedef struct dhcp4_packet {
 #define DHCP4_PSIZE (512)
 
 struct packet * dhcp4_discover(pcs *pc, int renew);
-struct packet * dhcp4_request(pcs *pc);
+struct packet * dhcp4_request(pcs *pc, int stage);
 struct packet * dhcp4_renew(pcs *pc);
 struct packet * dhcp4_release(pcs *pc);
 int isDhcp4_Offer(pcs *pc, struct packet *m);
