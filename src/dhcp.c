@@ -183,16 +183,18 @@ struct packet * dhcp4_request(pcs *pc, int stage)
 	dh->options[i++] = 1;
 	dh->options[i++] = DHCPREQUEST;
 	
-	dh->options[i++] = DHO_DHCP_SERVER_IDENTIFIER;
-	dh->options[i++] = 4;
-	((int*)(&dh->options[i]))[0] = pc->ip4.dhcp.svr;
-	i += sizeof(int);
-	
-	dh->options[i++] = DHO_DHCP_REQUESTED_ADDRESS;
-	dh->options[i++] = 4;
-	((int*)(&dh->options[i]))[0] = pc->ip4.dhcp.ip;
-	i += sizeof(int);
-	
+	if (stage == 0) {
+		dh->options[i++] = DHO_DHCP_SERVER_IDENTIFIER;
+		dh->options[i++] = 4;
+		((int*)(&dh->options[i]))[0] = pc->ip4.dhcp.svr;
+		i += sizeof(int);
+
+		dh->options[i++] = DHO_DHCP_REQUESTED_ADDRESS;
+		dh->options[i++] = 4;
+		((int*)(&dh->options[i]))[0] = pc->ip4.dhcp.ip;
+		i += sizeof(int);
+	}
+
 	dh->options[i++] = DHO_DHCP_CLIENT_IDENTIFIER;
 	dh->options[i++] = 7;
 	/* using hardware address as my identifier */
